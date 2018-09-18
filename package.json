@@ -5,7 +5,7 @@
   "main": "slack-translate.js",
   "license": "Apache-2.0",
   "scripts": {
-    "start": "SLACK_TOKEN=\"xoxb-300749784512-K6fCoAr3tXTwY0E3QbffCxbw\" SLACK_BOT_NAME=\"<@U8UN1P2F2>\" node slack-translate.js",
+    "start": "SLACK_TOKEN=\"YOUR_TOKEN\" SLACK_BOT_NAME=\"<@YOUR_BOT_NAME>\" node slack-translate.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Ivinco LTD",
@@ -18,3 +18,4 @@
     "google-translate-api": "^2.3.0"
   }
 }
+
