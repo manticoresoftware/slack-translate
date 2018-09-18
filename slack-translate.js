@@ -1,93 +1,172 @@
 // Copyright (c) 2016 SYSTRAN S.A.
 // Copyright (c) 2018 Ivinco LTD
+// Copyright (c) 2018 Manticore Search LTD
 
-var Slack = require('slack-client');
+class newSlackBot {
+    constructor(token, botName) {
+        const {RTMClient, WebClient} = require('@slack/client');
+        const translateAPI = require('google-translate-api');
+        this.fs = require('fs');
 
-var botToken;
-var targetLang;
+        this.rtm = new RTMClient(token);
+        this.web = new WebClient(token);
 
-const translateAPI = require('google-translate-api');
+        this.subscribedUsers = {};
+        this.translateToLanguage = {};
+        this.appPath = __dirname + '/subscribers_list.dat';
 
-function slackBot(token, targetLang, userBlackList) {
-  var autoReconnect = true;
-  var autoMark = true;
+        this.rtm.start();
+        this.getSubscribedUsers();
 
-  var slack = new Slack(token, autoReconnect, autoMark);
+        this.rtm.on('message', (message) => {
 
-  slack.on('open', function() {
-    var i;
+            if ((message.subtype && message.subtype === 'bot_message') ||
+                (!message.subtype && message.user === this.rtm.activeUserId)) {
+                return;
+            }
 
-    // Get all the channels that bot is a member of
-    var channels = [];
-    for (i in slack.channels) {
-      if (slack.channels.hasOwnProperty(i)) {
-        var channel = slack.channels[i];
-        if (channel.is_member)
-          channels.push("#" + channel.name);
-      }
-    }
+            let channel = message.channel;
+            let type = message.type;
+            let text = message.text;
 
-    // Get all groups that are open and not archived
-    var groups = [];
-    for (i in slack.groups) {
-      if (slack.groups.hasOwnProperty(i)) {
-        var group = slack.groups[i];
-        if (group.is_open && !group.is_archived)
-          groups.push(group.name);
-      }
-    }
+            // Log the message
+            console.log(`(channel:${channel}) message type: ${type} text: ${text}`);
 
-    console.log('The bot is @' + slack.self.name + ' in ' + slack.team.name);
-    console.log('You are in channels:', channels.join(', '));
-    console.log('As well as in groups:', groups.join(', '));
+            /* Handle commands */
+            if (message.text != null && text.indexOf(botName) !== -1) {
 
-  });
+                let words = text.split(' ');
+                let command = words[1];
 
-  slack.on('message', function(message) {
-    var channel = slack.getChannelGroupOrDMByID(message.channel);
-    var user = slack.getUserByID(message.user);
+                if (command === 'subscribe' || command === 'translate') {
+                    // WORDS[2] = [en, ru]
+                    let lang = words[2];
+                    if (translateAPI.languages.isSupported(lang)) {
+                        this.subscribedUsers[message.user] = lang;
+                        this.updateSubscribedUsers();
+                        this.sendEphemeralMessage('You’re subscribed to translation into *' + lang + '*', channel, message.user);
+                        this.recountLanguages();
+                        console.log(message.user + ' subscribed to translator ' + lang);
+                    }else {
+                        this.sendEphemeralMessage('Language *' + lang + '* don\'t supported', channel, message.user);
+                    }
 
-    if (user && user.name && userBlackList && userBlackList.indexOf(user.name) !== -1) {
-      console.log('Message from blacklisted user', user.name);
-      return;
-    }
+                } else if (command === 'unsubscribe' || command === 'mute') {
 
-    var type = message.type;
-    var ts = message.ts;
-    var text = message.text;
+                    if (this.subscribedUsers[message.user]) {
+                        delete this.subscribedUsers[message.user];
+                        this.updateSubscribedUsers();
+                        this.sendEphemeralMessage('You’ve unsubscribed from all translations', channel, message.user);
+                        this.recountLanguages();
+                        console.log(message.user + ' unsubscribe');
+                    } else {
+                        this.sendEphemeralMessage('You don\'t subscribed to any translator', channel, message.user);
+                    }
 
-    var channelName = channel && channel.is_channel ? '#' : '';
-    channelName += channel ? channel.name : 'UNKNOWN_CHANNEL';
+                } else if (command === 'help') {
 
-    var userName = user && user.name ? '@' + user.name : 'UNKNOWN_USER';
+                    this.web.chat.postMessage({
+                        channel: channel,
+                        text: "Here is the list of acceptable commands",
+                        attachments: [
+                            {
+                                "text": "@translate *translate, subscribe <language>* - tells the bot that you want in the " +
+                                "current channel to see translations of all foreign posts in <language>, " +
+                                "only one language can be translated for the same requested\n " +
+                                "@translate *unsubscribe, mute* - disable translate\n @translate *help* - show this list",
+                                "mrkdwn_in": [
+                                    "text",
+                                    "pretext"
+                                ]
+                            }
+                        ],
 
-    console.log('Received:', type, channelName, userName, ts, '"' + text + '"');
+                        as_user: true
+                    }).catch(console.error);
+                }
+                return;
+            }
 
-    if (type === 'message' && text && channel) {
-        translateAPI(text, {to: targetLang}).then(res => {
-          console.log('Google Translate output', res);
-          if (res.from.language.iso != targetLang) {
-            channel.send(res.text);
-            console.log('@' + slack.self.name + ' respond with ' + res.text);
-          }
-          return;
+            if (type === 'message' && text && channel) {
+
+                for (let language in this.translateToLanguage) {
+
+                    if (this.translateToLanguage.hasOwnProperty(language)) {
+
+                        translateAPI(text, {to: language})
+                            .then(res => {
+                                console.log('Google Translate output', res);
+
+                                for (let user in this.subscribedUsers) {
+                                    if (this.subscribedUsers.hasOwnProperty(user)) {
+                                        if(message.user === user){
+                                            continue;
+                                        }
+                                        if (language === this.subscribedUsers[user] &&
+                                            res.from.language.iso !== this.subscribedUsers[user]) {
+
+                                            this.sendEphemeralMessage(res.text, channel, user);
+                                        }
+                                    }
+                                }
+                                return false;
+                            })
+                            .catch(err => {
+                                console.log(err);
+                                return false;
+                            });
+                    }
+                }
+
+            } else {
+                let error = '';
+                error += type !== 'message' ? 'unexpected type ' + type + '. ' : '';
+                error += !text ? 'text was undefined. ' : '';
+                error += !channel ? 'channel was undefined.' : '';
+                console.log('@ could not respond. ' + error);
+            }
         });
-    } else {
-      var error = '';
-      error += type !== 'message' ? 'unexpected type ' + type + '. ' : '';
-      error += ! text ? 'text was undefined. ' : '';
-      error += ! channel ? 'channel was undefined.' : '';
-      console.log('@' + slack.self.name + ' could not respond. ' + error);
     }
-  });
 
-  slack.on('error', function(err) {
-    console.error('Error', 'slack', err);
-  });
+    getSubscribedUsers() {
+        this.fs.readFile(this.appPath, 'utf8', (err, data) => {
+            if (err) {
+                console.log(err);
+            } else {
+                if (data.length > 0) {
+                    this.subscribedUsers = JSON.parse(data);
+                    this.recountLanguages();
+                }
+            }
+        });
+    }
 
-  slack.login();
+    updateSubscribedUsers() {
+        this.fs.writeFile(this.appPath, JSON.stringify(this.subscribedUsers), 'utf8');
+    }
+
+    sendEphemeralMessage(text, channel, user) {
+        this.web.chat.postEphemeral({
+            channel: channel,
+            text: text,
+            user: user,
+            as_user: true
+        }).then((res) => {
+            console.log('Message sent: ', res);
+        }).catch(console.error);
+    }
+
+    recountLanguages(){
+        this.translateToLanguage = {};
+        for (let user in this.subscribedUsers) {
+            if (this.subscribedUsers.hasOwnProperty(user)) {
+                this.translateToLanguage[this.subscribedUsers[user]] = true;
+            }
+        }
+    }
 }
 
-botToken = '';
-targetLang = 'en';
-slackBot(botToken, targetLang, ['']);
+let botToken = process.env.SLACK_TOKEN;
+let botName = process.env.SLACK_BOT_NAME;
+
+new newSlackBot(botToken, botName);

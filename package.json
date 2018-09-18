@@ -5,7 +5,7 @@
   "main": "slack-translate.js",
   "license": "Apache-2.0",
   "scripts": {
-    "start": "node slack-translate.js",
+    "start": "SLACK_TOKEN=\"xoxb-300749784512-K6fCoAr3tXTwY0E3QbffCxbw\" SLACK_BOT_NAME=\"<@U8UN1P2F2>\" node slack-translate.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Ivinco LTD",
@@ -14,7 +14,7 @@
     "url": "https://github.com/Ivinco/slack-translate.git"
   },
   "dependencies": {
-    "google-translate-api": "^2.3.0",
-    "slack-client": "^1.5.1"
+    "@slack/client": "^4.6.0",
+    "google-translate-api": "^2.3.0"
   }
 }
