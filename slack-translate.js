@@ -129,20 +129,24 @@ class newSlackBot {
     }
 
     getSubscribedUsers() {
-        this.fs.readFile(this.appPath, 'utf8', (err, data) => {
-            if (err) {
-                console.log(err);
-            } else {
-                if (data.length > 0) {
-                    this.subscribedUsers = JSON.parse(data);
-                    this.recountLanguages();
+        if (this.fs.existsSync(this.appPath)) {
+            this.fs.readFile(this.appPath, 'utf8', (err, data) => {
+                if (err) {
+                    console.log(err);
+                } else {
+                    if (data.length > 0) {
+                        this.subscribedUsers = JSON.parse(data);
+                        this.recountLanguages();
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     updateSubscribedUsers() {
-        this.fs.writeFile(this.appPath, JSON.stringify(this.subscribedUsers), 'utf8');
+        this.fs.writeFile(this.appPath, JSON.stringify(this.subscribedUsers), function () {
+            
+        });
     }
 
     sendEphemeralMessage(text, channel, user) {
