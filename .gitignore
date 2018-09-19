@@ -1,5 +1,9 @@
 npm-debug.log
 node_modules
+package.json
+package-lock.json
+subscribers_list.dat
 .idea
 *.DS_Store
 *~
+
